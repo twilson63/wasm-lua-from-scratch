@@ -1,0 +1,9 @@
+entry_file: process.lua
+output_file: process.js
+
+functions:
+  handler:
+    return: string
+    args:
+      - string
+      - string
