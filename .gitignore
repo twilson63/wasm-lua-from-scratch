@@ -5,3 +5,7 @@
 /example/process.wasm
 /example/process.js
 /example/process.data
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
