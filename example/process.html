@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WebAssembly Lua</title>
+</head>
+<body>
+    <script src="./process.js"></script>
+    <script>
+
+        // Define the Extensions object
+        window.Extensions = {
+            Log: function(message) {
+                console.log("Logged: "+message);
+                return null; // always return 1 item back!
+            },
+
+            SHA256: function(message) {
+                return "FakeSha256:::" + message;
+            },
+
+            SigVerify: function(hash, signature, address) {
+                return (signature === "sig" + "|" + hash + "|" + address);
+            },
+            
+            // Add other functions as needed
+        };
+
+        Module.onRuntimeInitialized = () => {
+            const handler = Module.cwrap('handler', 'string', ['string', 'string']);
+        
+        const Message = JSON.stringify({
+            Message: 'MyMessage',
+            Address: '0x123123123',
+            Signature: 'sig|FakeSha256:::MyMessage|0x123123123'
+        })
+
+        const Environment = ""
+
+        const result = handler(Message, Environment);
+        console.log(result);
+    };
+    </script>
+</body>
+</html>
+

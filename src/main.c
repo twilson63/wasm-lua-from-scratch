@@ -8,39 +8,6 @@
 
 #include <emscripten.h>
 
-// extend to access hash function
-EM_JS(char*, call_arweave_crypto_hash, (const char* data), {
-  const dataStr = UTF8ToString(data);
-  const hashStr = globalThis.Extensions.ArweaveCrypto.hash(data);
-  const lengthBytes = lengthBytesUTF8(hashString) + 1;
-  const stringOnWasmHeap = _malloc(lengthBytes);
-  stringToUTF8(hashStr, stringOnWasmHeap, lengthBytes);
-  return stringOnWasmHeap;
-
-})
-
-static int l_call_arweave_crypto_hash(lua_State* L) {
-    // Check and get the first argument from the Lua stack, which should be a string
-    const char* data = luaL_checkstring(L, 1);
-    
-    // Call your existing C function that interacts with JavaScript
-    char* hash = call_arweave_crypto_hash(data);
-    
-    // Push the result (hash) back to Lua
-    lua_pushstring(L, hash);
-    
-    // Free the allocated memory for the hash string
-    free(hash);
-    
-    // Return the number of results
-    return 1;
-}
-
-
-// Function to register your C functions with Lua
-void luaL_openmylib(lua_State* L) {
-    lua_register(L, "arweave_crypto_hash", l_call_arweave_crypto_hash);
-}
 
 int boot_lua(lua_State* L);
 static lua_State *wasm_lua_state = NULL;
@@ -86,6 +53,71 @@ __LUA_FUNCTION_DECLARATIONS__
 //   }
 //   printf("\n");
 // }
+
+// Function to call JavaScript extensions dynamically
+static const char* call_extension(const char* funcName, const char* argsJson) {
+  return (const char*)EM_ASM_INT({
+    var func = window.Extensions[UTF8ToString($0)];
+
+    if (typeof func === 'function') {
+      var args = JSON.parse(UTF8ToString($1));
+
+      if (!Array.isArray(args)) {
+        // For a single argument, pass it directly
+        args = [args];
+      }
+
+      // Call the function
+      var result = func.apply(null, ...args);
+
+      // Convert result to JSON
+      var resultJson = JSON.stringify(result);
+      var lengthBytes = lengthBytesUTF8(resultJson) + 1;
+      var stringOnWasmHeap = _malloc(lengthBytes);
+      stringToUTF8(resultJson, stringOnWasmHeap, lengthBytes);
+      return stringOnWasmHeap;
+    } else {
+        throw 'Function ' + UTF8ToString($0) + ' is not defined in Extensions.';
+    }
+  }, funcName, argsJson);
+}
+
+// Lua binding to call extension functions
+static int l_call_extension(lua_State* L) {
+  const char* funcName = luaL_checkstring(L, 1); // Get the function name
+  const char* argsJson = luaL_checkstring(L, 2); // Get the JSON-encoded arguments
+  const char* resultJson = call_extension(funcName, argsJson); // Call the extension
+  lua_pushstring(L, resultJson); // Push the result JSON back onto the Lua stack
+  free((void*)resultJson); // Free the allocated string
+  return 1; // Number of return values
+}
+
+// Setup the Extensions proxy in Lua
+void setupExtensionsProxy(lua_State* L) {
+  const char* luaCode =
+    "local json = require('json')"
+    "local extensionsMeta = {"
+    "    __index = function(t, key)"
+    "        return function(...)"
+    "            local args = {...}"
+    "            local argsJson = json.encode({args})"
+    "            local resultJson = callExtension(key, argsJson)"
+    "            return json.decode(resultJson)"
+    "        end"
+    "    end"
+    "}"
+    "Extensions = {}"
+    "setmetatable(Extensions, extensionsMeta)"
+    "function callExtension(funcName, argsJson)"
+    "    return _G['call_extension'](funcName, argsJson)"
+    "end";
+
+  if (luaL_dostring(L, luaCode) != LUA_OK) {
+    fprintf(stderr, "Error setting up Extensions proxy: %s\n", lua_tostring(L, -1));
+    lua_pop(L, 1); // Remove error message from stack
+  }
+}
+
 
 /* Copied from lua.c */
 
@@ -155,8 +187,14 @@ int main(void) {
 
 // boot lua runtime from compiled lua source
 int boot_lua(lua_State* L) {
+  printf("Boot Lua started\n");
   luaL_openlibs(L);
-  //luaL_openmylib(L);
+
+  // Register the call_extension function
+  lua_register(L, "call_extension", l_call_extension);
+
+  // Setup the Extensions proxy
+  setupExtensionsProxy(L);
 
   if (luaL_loadbuffer(L, (const char*)program, sizeof(program), "main")) {
     fprintf(stderr, "error on luaL_loadbuffer()\n");
