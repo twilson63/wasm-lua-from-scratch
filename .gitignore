@@ -1,0 +1,11 @@
+/emsdk
+/lua-5.3.4
+/luarocks-2.4.4
+/webassembly-lua
+/example/process.wasm
+/example/process.js
+/example/process.data
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
